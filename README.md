@@ -41,15 +41,24 @@ Key idea:
 
 ## API configuration
 
-Set an API base URL via Vite env:
+By default, the app uses same-origin `/api` as the base URL and the Vite dev server proxies it to your backend.
 
-1) Create a `.env` file at the project root (Nordic-ICT-web):
+- Axios base URL: `/api` (see `src/infrastructure/http/apiClient.ts`)
+- Vite proxy target: `http://localhost:8080` by default (see `vite.config.ts`)
+
+You can override the proxy target by creating a `.env` file at the project root (Nordic-ICT-web):
+
+```
+VITE_PROXY_TARGET=http://localhost:8080
+```
+
+Alternatively, to bypass the proxy and hit a full origin, set:
 
 ```
 VITE_API_URL=https://your-api.example.com/api
 ```
 
-2) The default fallback is `http://localhost:5000/api` when `VITE_API_URL` is not set. The Axios client is defined in `src/infrastructure/http/apiClient.ts`.
+If `VITE_API_URL` is set, Axios will use it directly; otherwise it uses `/api` which the dev proxy will forward.
 
 ## Run locally
 

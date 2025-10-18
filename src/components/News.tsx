@@ -44,13 +44,17 @@ const News: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
-  const categories = [...new Set(newsItems.map(item => item.category))];
+  const categories = [...new Set(newsItems.map(item => item.category || 'Uncategorized'))];
 
   const filteredNews = newsItems.filter(item => {
-    const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.content.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
-    const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
+    const safeTitle = String(item.title ?? '');
+    const safeContent = String(item.content ?? '');
+    const matchesSearch = safeTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         safeContent.toLowerCase().includes(searchTerm.toLowerCase());
+    const safeStatus = (item.status ?? 'draft') as NewsPost['status'];
+    const matchesStatus = statusFilter === 'all' || safeStatus === statusFilter;
+    const safeCategory = item.category ?? 'Uncategorized';
+    const matchesCategory = categoryFilter === 'all' || safeCategory === categoryFilter;
     return matchesSearch && matchesStatus && matchesCategory;
   });
 
@@ -58,7 +62,9 @@ const News: React.FC = () => {
   const sortedNews = [...filteredNews].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
-    return new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime();
+    const bTime = new Date(b.publishDate ?? '').getTime() || 0;
+    const aTime = new Date(a.publishDate ?? '').getTime() || 0;
+    return bTime - aTime;
   });
 
   const totalPages = Math.ceil(sortedNews.length / itemsPerPage);
@@ -121,12 +127,7 @@ const News: React.FC = () => {
         try {
           const repo = new AxiosNewsRepository();
           const publicUrl = await repo.uploadPhoto(newsData.imageFile, editingNews.id);
-          // Optionally persist image URL via update endpoint
-          try {
-            await repo.update(editingNews.id, { image: publicUrl });
-          } catch (e) {
-            console.warn('Failed to persist image URL after upload (edit)', e);
-          }
+          // Backend upload endpoint is expected to persist the image; update local state
           updatedList = updatedList.map(item => item.id === editingNews.id ? { ...item, image: publicUrl } : item);
         } catch (e) {
           console.error('Image upload failed', e);
@@ -164,12 +165,7 @@ const News: React.FC = () => {
         if (newsData.imageFile) {
           try {
             const publicUrl = await repo.uploadPhoto(newsData.imageFile, created.id);
-            // Optionally persist image URL via update endpoint
-            try {
-              await repo.update(created.id, { image: publicUrl });
-            } catch (e) {
-              console.warn('Failed to persist image URL after upload (create)', e);
-            }
+            // Backend upload endpoint is expected to persist the image; update local state
             created = { ...created, image: publicUrl };
           } catch (e) {
             console.error('Image upload failed', e);
@@ -432,9 +428,38 @@ const NewsForm: React.FC<{
     imageFile: null,
   });
 
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(formData);
+  };
+
+  const handleUploadImage = async () => {
+    setUploadMsg(null);
+    setUploadError(null);
+    if (!newsItem?.id) {
+      setUploadError('Save the news first to enable image upload.');
+      return;
+    }
+    if (!formData.imageFile) {
+      setUploadError('Please select an image file first.');
+      return;
+    }
+    try {
+      setUploading(true);
+      const repo = new AxiosNewsRepository();
+      const publicUrl = await repo.uploadPhoto(formData.imageFile, newsItem.id);
+      setFormData(prev => ({ ...prev, image: publicUrl, imageFile: null }));
+      setUploadMsg('Image uploaded successfully.');
+    } catch (err) {
+      console.error('Upload failed', err);
+      setUploadError('Image upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -559,6 +584,30 @@ const NewsForm: React.FC<{
             onChange={(e) => setFormData({ ...formData, imageFile: e.target.files?.[0] ?? null })}
             className="block w-full text-sm text-gray-900 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
           />
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleUploadImage}
+              disabled={uploading || !formData.imageFile || !newsItem?.id}
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors inline-flex items-center"
+              aria-label="Upload selected image"
+              title={newsItem?.id ? 'Upload selected image' : 'Save the news first to enable image upload'}
+            >
+              {uploading ? (
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+              ) : null}
+              Upload Image
+            </button>
+            {!newsItem?.id && (
+              <span className="text-xs text-gray-500">Create/save the news to enable image upload.</span>
+            )}
+          </div>
+          {uploadMsg && (
+            <p className="mt-2 text-sm text-green-600 dark:text-green-400">{uploadMsg}</p>
+          )}
+          {uploadError && (
+            <p className="mt-2 text-sm text-red-600 dark:text-red-400">{uploadError}</p>
+          )}
         </div>
       </div>
 
